@@ -1,0 +1,59 @@
+{
+  "name": "Trade",
+  "type": "object",
+  "properties": {
+    "ticker": {
+      "type": "string",
+      "description": "Stock ticker symbol"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "buy",
+        "sell"
+      ],
+      "description": "Trade action"
+    },
+    "shares": {
+      "type": "number",
+      "description": "Number of shares"
+    },
+    "entry_price": {
+      "type": "number",
+      "description": "Entry price per share"
+    },
+    "exit_price": {
+      "type": "number",
+      "description": "Exit price per share (null if position still open)"
+    },
+    "trade_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date of trade"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "open",
+        "closed"
+      ],
+      "default": "open",
+      "description": "Trade status"
+    },
+    "profit_loss": {
+      "type": "number",
+      "description": "Profit or loss from the trade"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Trade notes and strategy"
+    }
+  },
+  "required": [
+    "ticker",
+    "action",
+    "shares",
+    "entry_price",
+    "trade_date"
+  ]
+}
