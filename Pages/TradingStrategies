@@ -1,0 +1,251 @@
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { RefreshCw, Target, Info } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useNavigate } from "react-router-dom";
+import { createPageUrl } from "@/utils";
+import StrategyCard from "../components/strategies/StrategyCard";
+import StrategyFilter from "../components/strategies/StrategyFilter";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
+
+export default function TradingStrategies() {
+  const navigate = useNavigate();
+  const [signals, setSignals] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [activeStrategy, setActiveStrategy] = useState("all");
+
+  const fetchStrategies = async () => {
+    setIsLoading(true);
+    try {
+      const response = await base44.integrations.Core.InvokeLLM({
+        prompt: `Analyze the current market and provide 15 high-probability trading setups based on advanced price action strategies. For each setup provide:
+
+- ticker: Stock symbol
+- company: Company name
+- current_price: Current price
+- strategy: One of these exact strategies:
+  * "Fair Value Gap (FVG)" - imbalance/gap in price action that needs to be filled
+  * "Liquidity Sweep" - stop hunt above/below key levels before reversal
+  * "Order Block" - institutional buying/selling zone
+  * "Break of Structure (BOS)" - trend continuation signal
+  * "Change of Character (CHoCH)" - potential trend reversal
+  * "Supply & Demand Zone" - institutional accumulation/distribution areas
+  * "Smart Money Concept" - institutional order flow patterns
+
+- direction: "long" or "short"
+- setup_description: 2-3 sentences explaining the setup, what pattern formed, and why it's a good trade
+- entry_zone: Specific entry price or range
+- target: Take profit level
+- stop_loss: Stop loss level
+- risk_reward: Risk/reward ratio (e.g., "1:3")
+- timeframe: "5min", "15min", "1H", "4H", or "Daily"
+- confidence: 0-100 confidence score
+- key_levels: Important support/resistance or liquidity levels to watch
+
+Use real current market data. Mix different strategies and timeframes. Focus on liquid, actively traded stocks.`,
+        add_context_from_internet: true,
+        response_json_schema: {
+          type: "object",
+          properties: {
+            signals: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  ticker: { type: "string" },
+                  company: { type: "string" },
+                  current_price: { type: "number" },
+                  strategy: { type: "string" },
+                  direction: { type: "string" },
+                  setup_description: { type: "string" },
+                  entry_zone: { type: "string" },
+                  target: { type: "string" },
+                  stop_loss: { type: "string" },
+                  risk_reward: { type: "string" },
+                  timeframe: { type: "string" },
+                  confidence: { type: "number" },
+                  key_levels: { type: "string" }
+                }
+              }
+            },
+            market_overview: {
+              type: "object",
+              properties: {
+                overall_trend: { type: "string" },
+                volatility: { type: "string" },
+                best_setups_now: { type: "string" }
+              }
+            }
+          }
+        }
+      });
+
+      setSignals(response);
+    } catch (error) {
+      console.error("Error fetching strategies:", error);
+    }
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    fetchStrategies();
+  }, []);
+
+  const getStrategyType = (strategyName) => {
+    if (strategyName.includes("Fair Value Gap") || strategyName.includes("FVG")) return "fair_value_gap";
+    if (strategyName.includes("Liquidity Sweep")) return "liquidity_sweep";
+    if (strategyName.includes("Order Block")) return "order_block";
+    if (strategyName.includes("BOS") || strategyName.includes("CHoCH") || strategyName.includes("Break of Structure") || strategyName.includes("Change of Character")) return "bos_choch";
+    if (strategyName.includes("Supply") || strategyName.includes("Demand")) return "supply_demand";
+    if (strategyName.includes("Smart Money")) return "smc";
+    return "other";
+  };
+
+  const filteredSignals = signals?.signals?.filter(signal => {
+    if (activeStrategy === "all") return true;
+    return getStrategyType(signal.strategy) === activeStrategy;
+  });
+
+  const strategyCounts = signals?.signals?.reduce((acc, signal) => {
+    const type = getStrategyType(signal.strategy);
+    acc[type] = (acc[type] || 0) + 1;
+    acc["all"] = (acc["all"] || 0) + 1;
+    return acc;
+  }, {});
+
+  return (
+    <div className="p-6 md:p-8 space-y-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h2 className="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-emerald-600 bg-clip-text text-transparent flex items-center gap-2">
+            <Target className="w-8 h-8 text-emerald-400" />
+            Trading Strategies
+          </h2>
+          <p className="text-zinc-400 mt-1">Advanced price action setups on real-time stocks</p>
+        </div>
+        <Button
+          onClick={fetchStrategies}
+          disabled={isLoading}
+          className="bg-emerald-600 hover:bg-emerald-700"
+        >
+          <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+          Refresh Setups
+        </Button>
+      </div>
+
+      {/* Market Overview */}
+      {!isLoading && signals?.market_overview && (
+        <Alert className="bg-zinc-900/50 border-zinc-800">
+          <Info className="h-4 w-4 text-emerald-400" />
+          <AlertTitle className="text-emerald-400">Market Context</AlertTitle>
+          <AlertDescription className="text-zinc-300 mt-2 space-y-1">
+            <p><strong>Overall Trend:</strong> {signals.market_overview.overall_trend}</p>
+            <p><strong>Volatility:</strong> {signals.market_overview.volatility}</p>
+            <p><strong>Best Setups Now:</strong> {signals.market_overview.best_setups_now}</p>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Strategy Filter */}
+      {!isLoading && (
+        <StrategyFilter 
+          activeStrategy={activeStrategy} 
+          onStrategyChange={setActiveStrategy}
+          counts={strategyCounts}
+        />
+      )}
+
+      {/* Loading State */}
+      {isLoading && (
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <Card key={i} className="bg-zinc-900/50 border-zinc-800">
+              <CardContent className="pt-6">
+                <div className="space-y-4 animate-pulse">
+                  <Skeleton className="h-8 w-32 bg-zinc-800" />
+                  <Skeleton className="h-24 w-full bg-zinc-800" />
+                  <Skeleton className="h-16 w-full bg-zinc-800" />
+                  <Skeleton className="h-10 w-full bg-zinc-800" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Strategy Cards */}
+      {!isLoading && filteredSignals && (
+        <>
+          {filteredSignals.length === 0 ? (
+            <Card className="bg-zinc-900/50 border-zinc-800">
+              <CardContent className="py-12 text-center">
+                <Target className="w-12 h-12 text-zinc-600 mx-auto mb-4" />
+                <p className="text-zinc-400">No setups found for this strategy. Try another filter.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredSignals.map((signal, index) => (
+                <StrategyCard
+                  key={index}
+                  signal={signal}
+                  onAnalyze={(ticker) => navigate(createPageUrl("StockAnalyzer") + `?ticker=${ticker}`)}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Strategy Explanations */}
+      {!isLoading && (
+        <Card className="bg-zinc-900/50 border-zinc-800">
+          <CardContent className="pt-6">
+            <h3 className="text-lg font-bold mb-4 text-zinc-100">Strategy Explanations</h3>
+            <div className="grid md:grid-cols-2 gap-4 text-sm">
+              <div className="p-3 bg-zinc-800/30 rounded-lg">
+                <h4 className="font-bold text-emerald-400 mb-1">Fair Value Gap (FVG)</h4>
+                <p className="text-zinc-400">An imbalance in price action where market moved too fast, creating a gap. Price often returns to fill these gaps.</p>
+              </div>
+              <div className="p-3 bg-zinc-800/30 rounded-lg">
+                <h4 className="font-bold text-emerald-400 mb-1">Liquidity Sweep</h4>
+                <p className="text-zinc-400">Institutional traders triggering stop losses above/below key levels to grab liquidity before reversing direction.</p>
+              </div>
+              <div className="p-3 bg-zinc-800/30 rounded-lg">
+                <h4 className="font-bold text-emerald-400 mb-1">Order Block</h4>
+                <p className="text-zinc-400">Last bullish/bearish candle before a strong move. Represents institutional buying/selling zone with high probability of reaction.</p>
+              </div>
+              <div className="p-3 bg-zinc-800/30 rounded-lg">
+                <h4 className="font-bold text-emerald-400 mb-1">BOS/CHoCH</h4>
+                <p className="text-zinc-400">Break of Structure (trend continuation) or Change of Character (potential reversal) based on market structure breaks.</p>
+              </div>
+              <div className="p-3 bg-zinc-800/30 rounded-lg">
+                <h4 className="font-bold text-emerald-400 mb-1">Supply & Demand</h4>
+                <p className="text-zinc-400">Zones where institutions accumulated (demand) or distributed (supply) large positions, causing strong reactions.</p>
+              </div>
+              <div className="p-3 bg-zinc-800/30 rounded-lg">
+                <h4 className="font-bold text-emerald-400 mb-1">Smart Money Concept</h4>
+                <p className="text-zinc-400">Following institutional order flow patterns, liquidity grabs, and market maker movements for high-probability trades.</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Disclaimer */}
+      <Card className="bg-amber-500/10 border-amber-500/30">
+        <CardContent className="pt-6">
+          <p className="text-sm text-amber-400">
+            <strong>Trading Risk Warning:</strong> These are advanced trading strategies that require proper risk management. All setups are AI-generated based on current market conditions. Always use stop losses, never risk more than 1-2% per trade, and practice on a demo account first. Past patterns do not guarantee future results.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
