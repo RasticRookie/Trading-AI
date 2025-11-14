@@ -1,0 +1,101 @@
+import React from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Activity, TrendingUp, TrendingDown, DollarSign } from "lucide-react";
+import { format } from "date-fns";
+
+export default function TradeSummary({ trades, isLoading }) {
+  if (isLoading) {
+    return (
+      <Card className="bg-zinc-900/50 border-zinc-800">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="w-5 h-5 text-emerald-400" />
+            TradingView Summary
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="animate-pulse space-y-3">
+            <div className="h-20 bg-zinc-800 rounded"></div>
+            <div className="h-20 bg-zinc-800 rounded"></div>
+            <div className="h-20 bg-zinc-800 rounded"></div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const openTrades = trades.filter(t => t.status === 'open');
+  const closedTrades = trades.filter(t => t.status === 'closed');
+  
+  const totalProfitLoss = closedTrades.reduce((sum, t) => sum + (t.profit_loss || 0), 0);
+  const winningTrades = closedTrades.filter(t => (t.profit_loss || 0) > 0).length;
+  const winRate = closedTrades.length > 0 ? ((winningTrades / closedTrades.length) * 100).toFixed(1) : 0;
+
+  return (
+    <Card className="bg-zinc-900/50 border-zinc-800">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Activity className="w-5 h-5 text-emerald-400" />
+          TradingView Summary
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="p-3 bg-zinc-800/50 rounded-lg text-center">
+            <p className="text-xs text-zinc-500 mb-1">Open Trades</p>
+            <p className="text-2xl font-bold">{openTrades.length}</p>
+          </div>
+          <div className="p-3 bg-zinc-800/50 rounded-lg text-center">
+            <p className="text-xs text-zinc-500 mb-1">Win Rate</p>
+            <p className="text-2xl font-bold text-emerald-400">{winRate}%</p>
+          </div>
+          <div className="p-3 bg-zinc-800/50 rounded-lg text-center">
+            <p className="text-xs text-zinc-500 mb-1">Total P&L</p>
+            <p className={`text-2xl font-bold ${totalProfitLoss >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              ${totalProfitLoss.toFixed(2)}
+            </p>
+          </div>
+        </div>
+
+        {/* Recent Trades */}
+        <div>
+          <h4 className="text-sm font-semibold text-zinc-400 mb-3">Recent Activity</h4>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {trades.slice(0, 5).map((trade) => {
+              const isProfit = (trade.profit_loss || 0) >= 0;
+              return (
+                <div key={trade.id} className="p-3 bg-zinc-800/30 rounded-lg border border-zinc-700/50">
+                  <div className="flex justify-between items-start mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold">{trade.ticker}</span>
+                      <Badge className={`${
+                        trade.action === 'buy' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                        'bg-red-500/20 text-red-400 border-red-500/30'
+                      } border text-xs`}>
+                        {trade.action}
+                      </Badge>
+                      <Badge variant="outline" className="text-xs border-zinc-700">
+                        {trade.status}
+                      </Badge>
+                    </div>
+                    {trade.status === 'closed' && (
+                      <span className={`text-sm font-semibold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {isProfit ? '+' : ''}${trade.profit_loss?.toFixed(2)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex justify-between text-xs text-zinc-500">
+                    <span>{trade.shares} shares @ ${trade.entry_price}</span>
+                    <span>{format(new Date(trade.trade_date), "MMM d")}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
