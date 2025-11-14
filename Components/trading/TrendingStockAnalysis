@@ -1,0 +1,79 @@
+import React from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { TrendingUp, TrendingDown, Activity } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+
+export default function TrendingStocksAnalysis({ analysis, isLoading }) {
+  if (isLoading) {
+    return (
+      <Card className="bg-zinc-900/50 border-zinc-800">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="w-5 h-5 text-emerald-400" />
+            Trending Stocks Analysis
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4 animate-pulse">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="h-24 bg-zinc-800 rounded"></div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="bg-zinc-900/50 border-zinc-800">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Activity className="w-5 h-5 text-emerald-400" />
+          Trending Stocks Analysis
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          {analysis?.stocks?.map((stock, index) => {
+            const isPositive = stock.momentum === 'bullish';
+            return (
+              <div key={index} className="p-4 bg-zinc-800/50 rounded-lg border border-zinc-700/50 hover:border-emerald-500/30 transition-colors">
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="text-lg font-bold">{stock.ticker}</h3>
+                      <Badge className={`${
+                        isPositive ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 
+                        'bg-red-500/20 text-red-400 border-red-500/30'
+                      } border`}>
+                        {isPositive ? <TrendingUp className="w-3 h-3 mr-1" /> : <TrendingDown className="w-3 h-3 mr-1" />}
+                        {stock.momentum}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-zinc-400">{stock.company}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xl font-bold">${stock.price}</p>
+                    <p className={`text-sm ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {stock.change > 0 ? '+' : ''}{stock.change}%
+                    </p>
+                  </div>
+                </div>
+                <p className="text-sm text-zinc-400 leading-relaxed">{stock.analysis}</p>
+                <div className="flex gap-2 mt-3">
+                  <Badge variant="outline" className="text-xs border-zinc-700">
+                    Volume: {stock.volume}
+                  </Badge>
+                  <Badge variant="outline" className="text-xs border-zinc-700">
+                    Volatility: {stock.volatility}
+                  </Badge>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
