@@ -1,0 +1,323 @@
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Plus, TrendingUp, TrendingDown, Trash2, DollarSign } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+
+export default function Portfolio() {
+  const queryClient = useQueryClient();
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [newPosition, setNewPosition] = useState({
+    ticker: "",
+    company_name: "",
+    shares: "",
+    purchase_price: "",
+    purchase_date: new Date().toISOString().split('T')[0]
+  });
+  const [currentPrices, setCurrentPrices] = useState({});
+  const [isLoadingPrices, setIsLoadingPrices] = useState(false);
+
+  const { data: portfolio, isLoading } = useQuery({
+    queryKey: ['portfolio'],
+    queryFn: () => base44.entities.Portfolio.list('-created_date'),
+    initialData: [],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data) => base44.entities.Portfolio.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+      setShowAddDialog(false);
+      setNewPosition({
+        ticker: "",
+        company_name: "",
+        shares: "",
+        purchase_price: "",
+        purchase_date: new Date().toISOString().split('T')[0]
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => base44.entities.Portfolio.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+    },
+  });
+
+  useEffect(() => {
+    if (portfolio.length > 0) {
+      fetchCurrentPrices();
+    }
+  }, [portfolio]);
+
+  const fetchCurrentPrices = async () => {
+    setIsLoadingPrices(true);
+    const tickers = [...new Set(portfolio.map(p => p.ticker))];
+    
+    try {
+      const response = await base44.integrations.Core.InvokeLLM({
+        prompt: `Get current stock prices for: ${tickers.join(', ')}. Return as a simple object mapping ticker to current price.`,
+        add_context_from_internet: true,
+        response_json_schema: {
+          type: "object",
+          properties: {
+            prices: {
+              type: "object",
+              additionalProperties: { type: "number" }
+            }
+          }
+        }
+      });
+      
+      setCurrentPrices(response.prices || {});
+    } catch (error) {
+      console.error("Error fetching prices:", error);
+    }
+    setIsLoadingPrices(false);
+  };
+
+  const handleAddPosition = () => {
+    createMutation.mutate({
+      ...newPosition,
+      shares: parseFloat(newPosition.shares),
+      purchase_price: parseFloat(newPosition.purchase_price)
+    });
+  };
+
+  const calculatePositionValue = (position) => {
+    const currentPrice = currentPrices[position.ticker] || position.purchase_price;
+    const currentValue = currentPrice * position.shares;
+    const costBasis = position.purchase_price * position.shares;
+    const gainLoss = currentValue - costBasis;
+    const gainLossPercent = ((gainLoss / costBasis) * 100).toFixed(2);
+
+    return {
+      currentPrice,
+      currentValue,
+      costBasis,
+      gainLoss,
+      gainLossPercent
+    };
+  };
+
+  const totalValue = portfolio.reduce((sum, pos) => {
+    const { currentValue } = calculatePositionValue(pos);
+    return sum + currentValue;
+  }, 0);
+
+  const totalCost = portfolio.reduce((sum, pos) => {
+    return sum + (pos.purchase_price * pos.shares);
+  }, 0);
+
+  const totalGainLoss = totalValue - totalCost;
+  const totalGainLossPercent = totalCost > 0 ? ((totalGainLoss / totalCost) * 100).toFixed(2) : 0;
+
+  return (
+    <div className="p-6 md:p-8 space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-emerald-600 bg-clip-text text-transparent">
+            My Portfolio
+          </h2>
+          <p className="text-zinc-400 mt-1">Track your investments and performance</p>
+        </div>
+        <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+          <DialogTrigger asChild>
+            <Button className="bg-emerald-600 hover:bg-emerald-700">
+              <Plus className="w-4 h-4 mr-2" />
+              Add Position
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="bg-zinc-900 border-zinc-800">
+            <DialogHeader>
+              <DialogTitle>Add New Position</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Ticker Symbol</Label>
+                <Input
+                  value={newPosition.ticker}
+                  onChange={(e) => setNewPosition({...newPosition, ticker: e.target.value.toUpperCase()})}
+                  placeholder="AAPL"
+                  className="bg-zinc-800 border-zinc-700"
+                />
+              </div>
+              <div>
+                <Label>Company Name</Label>
+                <Input
+                  value={newPosition.company_name}
+                  onChange={(e) => setNewPosition({...newPosition, company_name: e.target.value})}
+                  placeholder="Apple Inc."
+                  className="bg-zinc-800 border-zinc-700"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Shares</Label>
+                  <Input
+                    type="number"
+                    value={newPosition.shares}
+                    onChange={(e) => setNewPosition({...newPosition, shares: e.target.value})}
+                    placeholder="100"
+                    className="bg-zinc-800 border-zinc-700"
+                  />
+                </div>
+                <div>
+                  <Label>Purchase Price</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={newPosition.purchase_price}
+                    onChange={(e) => setNewPosition({...newPosition, purchase_price: e.target.value})}
+                    placeholder="150.00"
+                    className="bg-zinc-800 border-zinc-700"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label>Purchase Date</Label>
+                <Input
+                  type="date"
+                  value={newPosition.purchase_date}
+                  onChange={(e) => setNewPosition({...newPosition, purchase_date: e.target.value})}
+                  className="bg-zinc-800 border-zinc-700"
+                />
+              </div>
+              <Button 
+                onClick={handleAddPosition}
+                className="w-full bg-emerald-600 hover:bg-emerald-700"
+                disabled={!newPosition.ticker || !newPosition.shares || !newPosition.purchase_price}
+              >
+                Add to Portfolio
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Portfolio Summary */}
+      <div className="grid md:grid-cols-3 gap-4">
+        <Card className="bg-zinc-900/50 border-zinc-800">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-zinc-400">Total Value</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">${totalValue.toFixed(2)}</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-zinc-900/50 border-zinc-800">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-zinc-400">Total Cost</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">${totalCost.toFixed(2)}</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-zinc-900/50 border-zinc-800">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-zinc-400">Total Gain/Loss</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className={`text-3xl font-bold ${totalGainLoss >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              {totalGainLoss >= 0 ? '+' : ''}${totalGainLoss.toFixed(2)}
+            </p>
+            <p className={`text-sm ${totalGainLoss >= 0 ? 'text-emerald-400' : 'text-red-400'} flex items-center gap-1 mt-1`}>
+              {totalGainLoss >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+              {totalGainLossPercent}%
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Holdings */}
+      <Card className="bg-zinc-900/50 border-zinc-800">
+        <CardHeader>
+          <div className="flex justify-between items-center">
+            <CardTitle>Holdings</CardTitle>
+            {isLoadingPrices && (
+              <span className="text-sm text-zinc-400">Updating prices...</span>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {portfolio.length === 0 ? (
+            <div className="text-center py-12">
+              <DollarSign className="w-12 h-12 text-zinc-600 mx-auto mb-4" />
+              <p className="text-zinc-400">No positions yet. Add your first investment!</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {portfolio.map((position) => {
+                const { currentPrice, currentValue, costBasis, gainLoss, gainLossPercent } = calculatePositionValue(position);
+                const isPositive = gainLoss >= 0;
+
+                return (
+                  <div key={position.id} className="p-4 bg-zinc-800/50 rounded-lg border border-zinc-700/50 hover:border-emerald-500/30 transition-colors">
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="text-xl font-bold">{position.ticker}</h3>
+                          <Badge className={`${isPositive ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'} border`}>
+                            {isPositive ? '+' : ''}{gainLossPercent}%
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-zinc-400">{position.company_name}</p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => deleteMutation.mutate(position.id)}
+                        className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                      <div>
+                        <p className="text-xs text-zinc-500">Shares</p>
+                        <p className="font-semibold">{position.shares}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-zinc-500">Avg Cost</p>
+                        <p className="font-semibold">${position.purchase_price.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-zinc-500">Current Price</p>
+                        <p className="font-semibold">${currentPrice.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-zinc-500">Market Value</p>
+                        <p className="font-semibold">${currentValue.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-zinc-500">Gain/Loss</p>
+                        <p className={`font-semibold ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {isPositive ? '+' : ''}${gainLoss.toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
