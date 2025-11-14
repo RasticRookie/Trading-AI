@@ -1,0 +1,241 @@
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { RefreshCw, TrendingUp, TrendingDown, Clock, ExternalLink, ArrowUpCircle, ArrowDownCircle } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+export default function NewsFeed() {
+  const [newsItems, setNewsItems] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [filter, setFilter] = useState("all");
+
+  const fetchNews = async () => {
+    setIsLoading(true);
+    try {
+      const response = await base44.integrations.Core.InvokeLLM({
+        prompt: `Generate a comprehensive real-time market news feed with 12 news items. For each news story, provide:
+- headline: Clear, concise news headline
+- ticker: Main stock ticker affected
+- company: Company name
+- signal: "long" or "short" - whether this news suggests going long or short
+- reason: Detailed 2-3 sentence explanation of why traders should go long or short based on this news
+- impact: "high", "medium", or "low"
+- time: Time published (use realistic times from today like "2 hours ago", "45 minutes ago", etc.)
+- source: News source name
+- price_target: If going long, suggest upside target; if short, suggest downside target
+- timeframe: "intraday", "swing", or "position"
+
+Mix of different types of news: earnings reports, analyst upgrades/downgrades, product launches, regulatory news, market sentiment, technical breakouts, sector rotation, economic data, etc.
+
+Use real current market news and data. Make the analysis actionable and specific.`,
+        add_context_from_internet: true,
+        response_json_schema: {
+          type: "object",
+          properties: {
+            news: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  headline: { type: "string" },
+                  ticker: { type: "string" },
+                  company: { type: "string" },
+                  signal: { type: "string" },
+                  reason: { type: "string" },
+                  impact: { type: "string" },
+                  time: { type: "string" },
+                  source: { type: "string" },
+                  price_target: { type: "string" },
+                  timeframe: { type: "string" }
+                }
+              }
+            }
+          }
+        }
+      });
+
+      setNewsItems(response.news);
+    } catch (error) {
+      console.error("Error fetching news:", error);
+    }
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    fetchNews();
+  }, []);
+
+  const filteredNews = newsItems?.filter(item => {
+    if (filter === "all") return true;
+    return item.signal === filter;
+  });
+
+  return (
+    <div className="p-6 md:p-8 space-y-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h2 className="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-emerald-600 bg-clip-text text-transparent">
+            Market News Feed
+          </h2>
+          <p className="text-zinc-400 mt-1">Real-time news with long/short recommendations</p>
+        </div>
+        <Button
+          onClick={fetchNews}
+          disabled={isLoading}
+          className="bg-emerald-600 hover:bg-emerald-700"
+        >
+          <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+          Refresh Feed
+        </Button>
+      </div>
+
+      {/* Filters */}
+      <Tabs value={filter} onValueChange={setFilter}>
+        <TabsList className="bg-zinc-900/50 border border-zinc-800">
+          <TabsTrigger value="all" className="data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-400">
+            All News
+          </TabsTrigger>
+          <TabsTrigger value="long" className="data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-400">
+            <ArrowUpCircle className="w-4 h-4 mr-2" />
+            Long Signals
+          </TabsTrigger>
+          <TabsTrigger value="short" className="data-[state=active]:bg-red-500/20 data-[state=active]:text-red-400">
+            <ArrowDownCircle className="w-4 h-4 mr-2" />
+            Short Signals
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {/* News Feed */}
+      {isLoading ? (
+        <div className="space-y-4">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <Card key={i} className="bg-zinc-900/50 border-zinc-800">
+              <CardContent className="pt-6">
+                <div className="space-y-3 animate-pulse">
+                  <Skeleton className="h-6 w-3/4 bg-zinc-800" />
+                  <Skeleton className="h-4 w-full bg-zinc-800" />
+                  <Skeleton className="h-4 w-full bg-zinc-800" />
+                  <Skeleton className="h-4 w-1/2 bg-zinc-800" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {filteredNews?.map((item, index) => {
+            const isLong = item.signal === "long";
+            return (
+              <Card key={index} className={`bg-zinc-900/50 border-zinc-800 hover:border-${isLong ? 'emerald' : 'red'}-500/30 transition-all`}>
+                <CardHeader>
+                  <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-3">
+                    <div className="flex-1">
+                      <div className="flex items-start gap-3 mb-2">
+                        <div className={`p-2 rounded-lg ${isLong ? 'bg-emerald-500/20' : 'bg-red-500/20'}`}>
+                          {isLong ? 
+                            <ArrowUpCircle className="w-5 h-5 text-emerald-400" /> : 
+                            <ArrowDownCircle className="w-5 h-5 text-red-400" />
+                          }
+                        </div>
+                        <div className="flex-1">
+                          <CardTitle className="text-xl leading-tight mb-2">{item.headline}</CardTitle>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge className="bg-zinc-800 text-zinc-300 border-zinc-700">
+                              {item.ticker}
+                            </Badge>
+                            <span className="text-sm text-zinc-400">{item.company}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <Badge className={`${
+                        isLong ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 
+                        'bg-red-500/20 text-red-400 border-red-500/30'
+                      } border text-base px-3 py-1 font-bold`}>
+                        {isLong ? 'GO LONG' : 'GO SHORT'}
+                      </Badge>
+                      <Badge className={`${
+                        item.impact === 'high' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                        item.impact === 'medium' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
+                        'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                      } border`}>
+                        {item.impact} impact
+                      </Badge>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Trading Signal Box */}
+                  <div className={`p-4 rounded-lg border ${
+                    isLong ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'
+                  }`}>
+                    <div className="flex items-start gap-3 mb-3">
+                      <div className={`p-1.5 rounded ${isLong ? 'bg-emerald-500/20' : 'bg-red-500/20'}`}>
+                        {isLong ? <TrendingUp className="w-4 h-4 text-emerald-400" /> : <TrendingDown className="w-4 h-4 text-red-400" />}
+                      </div>
+                      <div className="flex-1">
+                        <h4 className={`font-semibold mb-2 ${isLong ? 'text-emerald-400' : 'text-red-400'}`}>
+                          Why {isLong ? 'Long' : 'Short'}?
+                        </h4>
+                        <p className="text-sm text-zinc-300 leading-relaxed">{item.reason}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 pt-3 border-t border-zinc-700/50">
+                      <div>
+                        <p className="text-xs text-zinc-500 mb-1">Price Target</p>
+                        <p className={`font-bold ${isLong ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {item.price_target}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-zinc-500 mb-1">Timeframe</p>
+                        <Badge variant="outline" className="border-zinc-700 text-zinc-300">
+                          {item.timeframe}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Meta Info */}
+                  <div className="flex flex-wrap items-center justify-between text-xs text-zinc-500 pt-2 border-t border-zinc-800">
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {item.time}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <ExternalLink className="w-3 h-3" />
+                        {item.source}
+                      </div>
+                    </div>
+                    <Button 
+                      variant="link" 
+                      className="h-auto p-0 text-emerald-400 hover:text-emerald-300"
+                      onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(item.ticker + ' stock news')}`, '_blank')}
+                    >
+                      Read more →
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Disclaimer */}
+      <Card className="bg-amber-500/10 border-amber-500/30">
+        <CardContent className="pt-6">
+          <p className="text-sm text-amber-400">
+            <strong>Trading Disclaimer:</strong> These signals are AI-generated based on current news and market data. They are for informational purposes only and do not constitute financial advice. Market conditions change rapidly. Always conduct your own research, use proper risk management, and consider consulting a licensed financial advisor before executing any trades.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
