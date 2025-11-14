@@ -1,233 +1,307 @@
 import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
-import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Plus } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { createPageUrl } from "@/utils";
-import TrendingStocksAnalysis from "../components/trading/TrendingStocksAnalysis";
-import TradeSummary from "../components/trading/TradeSummary";
-import AIInsights from "../components/trading/AIInsights";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Search, TrendingUp, TrendingDown, Sparkles, Plus } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 
-export default function Dashboard() {
-  const navigate = useNavigate();
-  const [trendingAnalysis, setTrendingAnalysis] = useState(null);
-  const [insights, setInsights] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [showAddTradeDialog, setShowAddTradeDialog] = useState(false);
-  const [newTrade, setNewTrade] = useState({
-    ticker: "",
-    action: "buy",
-    shares: "",
-    entry_price: "",
-    trade_date: new Date().toISOString().split('T')[0],
-    status: "open"
-  });
+export default function StockAnalyzer() {
+  const [ticker, setTicker] = useState("");
+  const [analysis, setAnalysis] = useState(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-  const { data: trades, isLoading: tradesLoading, refetch: refetchTrades } = useQuery({
-    queryKey: ['trades'],
-    queryFn: () => base44.entities.Trade.list('-trade_date'),
-    initialData: [],
-  });
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlTicker = urlParams.get('ticker');
+    if (urlTicker) {
+      setTicker(urlTicker);
+      analyzeStock(urlTicker);
+    }
+  }, []);
 
-  const fetchMarketData = async () => {
-    setIsRefreshing(true);
+  const analyzeStock = async (stockTicker) => {
+    const tickerToAnalyze = stockTicker || ticker;
+    if (!tickerToAnalyze) return;
+
+    setIsAnalyzing(true);
     try {
       const response = await base44.integrations.Core.InvokeLLM({
-        prompt: `Give me a comprehensive market analysis including:
-1. Analysis of 5 trending stocks right now with ticker, company, current price, % change, volume, volatility level, momentum (bullish/bearish), and detailed analysis of why they're trending and their trading potential
-2. 3 key AI-powered market insights with sentiment (bullish/bearish/neutral) and sector
+        prompt: `Perform a comprehensive day trading analysis for ${tickerToAnalyze.toUpperCase()}. Include:
+1. Current price, day change %, volume
+2. AI prediction for next 24 hours (bullish/bearish/neutral)
+3. Buy/Sell/Hold recommendation with confidence level (0-100)
+4. Key technical indicators (RSI, MACD signal, support/resistance levels)
+5. Recent news impact (positive/negative/neutral)
+6. 3 specific trading strategies for today
+7. Risk level (low/medium/high)
+8. Target price for today
+9. Stop loss recommendation
 
-Focus on stocks with high volume and volatility that are suitable for day trading. Use real current market data.`,
+Provide real current market data and specific actionable insights.`,
         add_context_from_internet: true,
         response_json_schema: {
           type: "object",
           properties: {
-            trending_stocks: {
+            ticker: { type: "string" },
+            company_name: { type: "string" },
+            current_price: { type: "number" },
+            day_change_percent: { type: "number" },
+            volume: { type: "string" },
+            prediction: { type: "string" },
+            recommendation: { type: "string" },
+            confidence: { type: "number" },
+            technical_indicators: {
               type: "object",
               properties: {
-                stocks: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      ticker: { type: "string" },
-                      company: { type: "string" },
-                      price: { type: "number" },
-                      change: { type: "number" },
-                      volume: { type: "string" },
-                      volatility: { type: "string" },
-                      momentum: { type: "string" },
-                      analysis: { type: "string" }
-                    }
-                  }
-                }
+                rsi: { type: "number" },
+                macd_signal: { type: "string" },
+                support: { type: "number" },
+                resistance: { type: "number" }
               }
             },
-            insights: {
+            news_impact: { type: "string" },
+            trading_strategies: {
               type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  sentiment: { type: "string" },
-                  sector: { type: "string" },
-                  insight: { type: "string" }
-                }
-              }
-            }
+              items: { type: "string" }
+            },
+            risk_level: { type: "string" },
+            target_price: { type: "number" },
+            stop_loss: { type: "number" },
+            analysis_summary: { type: "string" }
           }
         }
       });
 
-      setTrendingAnalysis(response.trending_stocks);
-      setInsights(response.insights);
+      setAnalysis(response);
     } catch (error) {
-      console.error("Error fetching market data:", error);
+      console.error("Error analyzing stock:", error);
     }
-    setIsLoading(false);
-    setIsRefreshing(false);
+    setIsAnalyzing(false);
   };
 
-  useEffect(() => {
-    fetchMarketData();
-  }, []);
-
-  const handleAddTrade = async () => {
-    await base44.entities.Trade.create({
-      ...newTrade,
-      shares: parseFloat(newTrade.shares),
-      entry_price: parseFloat(newTrade.entry_price)
-    });
+  const handleAddToPortfolio = async () => {
+    if (!analysis) return;
     
-    setShowAddTradeDialog(false);
-    setNewTrade({
-      ticker: "",
-      action: "buy",
-      shares: "",
-      entry_price: "",
-      trade_date: new Date().toISOString().split('T')[0],
-      status: "open"
+    const shares = prompt("How many shares?");
+    if (!shares) return;
+
+    await base44.entities.Portfolio.create({
+      ticker: analysis.ticker,
+      company_name: analysis.company_name,
+      shares: parseFloat(shares),
+      purchase_price: analysis.current_price,
+      purchase_date: new Date().toISOString().split('T')[0]
     });
-    refetchTrades();
+
+    alert("Added to portfolio!");
   };
+
+  const isPositive = analysis?.day_change_percent >= 0;
 
   return (
     <div className="p-6 md:p-8 space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-emerald-600 bg-clip-text text-transparent">
-            Market Dashboard
-          </h2>
-          <p className="text-zinc-400 mt-1">Live market analysis and your trading activity</p>
-        </div>
-        <div className="flex gap-3">
-          <Dialog open={showAddTradeDialog} onOpenChange={setShowAddTradeDialog}>
-            <DialogTrigger asChild>
-              <Button variant="outline" className="border-zinc-700 hover:bg-zinc-800">
-                <Plus className="w-4 h-4 mr-2" />
-                Log Trade
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="bg-zinc-900 border-zinc-800">
-              <DialogHeader>
-                <DialogTitle>Log New Trade</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <Label>Ticker</Label>
-                  <Input
-                    value={newTrade.ticker}
-                    onChange={(e) => setNewTrade({...newTrade, ticker: e.target.value.toUpperCase()})}
-                    placeholder="AAPL"
-                    className="bg-zinc-800 border-zinc-700"
-                  />
-                </div>
-                <div>
-                  <Label>Action</Label>
-                  <Select value={newTrade.action} onValueChange={(value) => setNewTrade({...newTrade, action: value})}>
-                    <SelectTrigger className="bg-zinc-800 border-zinc-700">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="buy">Buy</SelectItem>
-                      <SelectItem value="sell">Sell</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Shares</Label>
-                    <Input
-                      type="number"
-                      value={newTrade.shares}
-                      onChange={(e) => setNewTrade({...newTrade, shares: e.target.value})}
-                      placeholder="100"
-                      className="bg-zinc-800 border-zinc-700"
-                    />
-                  </div>
-                  <div>
-                    <Label>Entry Price</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={newTrade.entry_price}
-                      onChange={(e) => setNewTrade({...newTrade, entry_price: e.target.value})}
-                      placeholder="150.00"
-                      className="bg-zinc-800 border-zinc-700"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <Label>Trade Date</Label>
-                  <Input
-                    type="date"
-                    value={newTrade.trade_date}
-                    onChange={(e) => setNewTrade({...newTrade, trade_date: e.target.value})}
-                    className="bg-zinc-800 border-zinc-700"
-                  />
-                </div>
-                <Button 
-                  onClick={handleAddTrade}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700"
-                  disabled={!newTrade.ticker || !newTrade.shares || !newTrade.entry_price}
-                >
-                  Log Trade
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-          <Button
-            onClick={fetchMarketData}
-            disabled={isRefreshing}
-            className="bg-emerald-600 hover:bg-emerald-700"
-          >
-            <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-        </div>
+      <div>
+        <h2 className="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-emerald-600 bg-clip-text text-transparent">
+          Stock Analyzer
+        </h2>
+        <p className="text-zinc-400 mt-1">AI-powered deep analysis and predictions</p>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <TrendingStocksAnalysis analysis={trendingAnalysis} isLoading={isLoading} />
+      <Card className="bg-zinc-900/50 border-zinc-800">
+        <CardContent className="pt-6">
+          <div className="flex gap-3">
+            <Input
+              placeholder="Enter stock ticker (e.g., AAPL, TSLA, NVDA)"
+              value={ticker}
+              onChange={(e) => setTicker(e.target.value.toUpperCase())}
+              onKeyPress={(e) => e.key === 'Enter' && analyzeStock()}
+              className="bg-zinc-800/50 border-zinc-700 text-lg"
+            />
+            <Button
+              onClick={() => analyzeStock()}
+              disabled={isAnalyzing || !ticker}
+              className="bg-emerald-600 hover:bg-emerald-700 px-8"
+            >
+              <Search className="w-5 h-5 mr-2" />
+              Analyze
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {isAnalyzing && (
+        <div className="grid md:grid-cols-2 gap-6">
+          {[1, 2, 3, 4].map((i) => (
+            <Card key={i} className="bg-zinc-900/50 border-zinc-800">
+              <CardHeader>
+                <Skeleton className="h-6 w-32 bg-zinc-800" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-24 w-full bg-zinc-800" />
+              </CardContent>
+            </Card>
+          ))}
         </div>
-        
+      )}
+
+      {analysis && !isAnalyzing && (
         <div className="space-y-6">
-          <TradeSummary trades={trades} isLoading={tradesLoading} />
-          <AIInsights insights={insights} isLoading={isLoading} />
+          {/* Stock Header */}
+          <Card className="bg-gradient-to-br from-zinc-900 to-zinc-900/50 border-zinc-800">
+            <CardContent className="pt-6">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <div className="flex items-center gap-3 mb-2">
+                    <h3 className="text-4xl font-bold">{analysis.ticker}</h3>
+                    <Badge className={`${
+                      analysis.prediction === 'bullish' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                      analysis.prediction === 'bearish' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                      'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                    } border text-base px-3 py-1`}>
+                      {analysis.prediction}
+                    </Badge>
+                  </div>
+                  <p className="text-xl text-zinc-400">{analysis.company_name}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-4xl font-bold">${analysis.current_price}</p>
+                  <div className={`flex items-center gap-1 text-lg font-medium mt-1 ${
+                    isPositive ? 'text-emerald-400' : 'text-red-400'
+                  }`}>
+                    {isPositive ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
+                    {analysis.day_change_percent > 0 ? '+' : ''}{analysis.day_change_percent}%
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Recommendation */}
+          <Card className="bg-zinc-900/50 border-zinc-800">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-emerald-400" />
+                AI Recommendation
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-3xl font-bold text-emerald-400">{analysis.recommendation}</p>
+                  <p className="text-zinc-400 mt-1">Confidence: {analysis.confidence}%</p>
+                </div>
+                <Button
+                  onClick={handleAddToPortfolio}
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add to Portfolio
+                </Button>
+              </div>
+              <div className="w-full bg-zinc-800 rounded-full h-3">
+                <div
+                  className="bg-gradient-to-r from-emerald-500 to-emerald-600 h-3 rounded-full transition-all"
+                  style={{ width: `${analysis.confidence}%` }}
+                ></div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* Technical Indicators */}
+            <Card className="bg-zinc-900/50 border-zinc-800">
+              <CardHeader>
+                <CardTitle>Technical Indicators</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex justify-between items-center p-3 bg-zinc-800/50 rounded-lg">
+                  <span className="text-zinc-400">RSI</span>
+                  <span className="font-bold text-lg">{analysis.technical_indicators.rsi}</span>
+                </div>
+                <div className="flex justify-between items-center p-3 bg-zinc-800/50 rounded-lg">
+                  <span className="text-zinc-400">MACD Signal</span>
+                  <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 border">
+                    {analysis.technical_indicators.macd_signal}
+                  </Badge>
+                </div>
+                <div className="flex justify-between items-center p-3 bg-zinc-800/50 rounded-lg">
+                  <span className="text-zinc-400">Support</span>
+                  <span className="font-bold text-lg">${analysis.technical_indicators.support}</span>
+                </div>
+                <div className="flex justify-between items-center p-3 bg-zinc-800/50 rounded-lg">
+                  <span className="text-zinc-400">Resistance</span>
+                  <span className="font-bold text-lg">${analysis.technical_indicators.resistance}</span>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Trading Targets */}
+            <Card className="bg-zinc-900/50 border-zinc-800">
+              <CardHeader>
+                <CardTitle>Trading Targets</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
+                  <p className="text-sm text-zinc-400 mb-1">Target Price</p>
+                  <p className="text-3xl font-bold text-emerald-400">${analysis.target_price}</p>
+                </div>
+                <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+                  <p className="text-sm text-zinc-400 mb-1">Stop Loss</p>
+                  <p className="text-3xl font-bold text-red-400">${analysis.stop_loss}</p>
+                </div>
+                <div className="flex justify-between items-center p-3 bg-zinc-800/50 rounded-lg">
+                  <span className="text-zinc-400">Risk Level</span>
+                  <Badge className={`${
+                    analysis.risk_level === 'low' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                    analysis.risk_level === 'high' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                    'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                  } border`}>
+                    {analysis.risk_level}
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Trading Strategies */}
+          <Card className="bg-zinc-900/50 border-zinc-800">
+            <CardHeader>
+              <CardTitle>Today's Trading Strategies</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {analysis.trading_strategies.map((strategy, index) => (
+                  <div key={index} className="p-4 bg-zinc-800/50 rounded-lg border border-zinc-700/50">
+                    <div className="flex items-start gap-3">
+                      <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold flex-shrink-0">
+                        {index + 1}
+                      </div>
+                      <p className="text-zinc-300">{strategy}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Analysis Summary */}
+          <Card className="bg-zinc-900/50 border-zinc-800">
+            <CardHeader>
+              <CardTitle>Analysis Summary</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-zinc-300 leading-relaxed">{analysis.analysis_summary}</p>
+              <div className="mt-4 p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                <p className="text-sm text-amber-400">
+                  <strong>Disclaimer:</strong> This analysis is AI-generated and for informational purposes only. Always do your own research and consult with a financial advisor before making investment decisions.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         </div>
-      </div>
+      )}
     </div>
   );
 }
